@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 from uuid import uuid4
 
 from sqlmodel import Field, Relationship, SQLModel
@@ -22,8 +20,8 @@ class User(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
-    complaints: list["Complaint"] = Relationship(back_populates="user")
-    complaint_history_entries: list["ComplaintHistory"] = Relationship(
+    complaints: List["Complaint"] = Relationship(back_populates="user")
+    complaint_history_entries: List["ComplaintHistory"] = Relationship(
         back_populates="changed_by_user"
     )
 
@@ -35,7 +33,7 @@ class Department(SQLModel, table=True):
     name: str = Field(index=True, unique=True)
     description: str
 
-    complaints: list["Complaint"] = Relationship(back_populates="department")
+    complaints: List["Complaint"] = Relationship(back_populates="department")
 
 
 class Complaint(SQLModel, table=True):
@@ -43,16 +41,20 @@ class Complaint(SQLModel, table=True):
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     user_id: str = Field(foreign_key="users.id", index=True)
-    department_id: Optional[str] = Field(default=None, foreign_key="departments.id", index=True)
+    department_id: Optional[str] = Field(
+        default=None,
+        foreign_key="departments.id",
+        index=True,
+    )
     title: str
     description: str
     status: str = Field(default="pending", index=True)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
-    user: Optional[User] = Relationship(back_populates="complaints")
-    department: Optional[Department] = Relationship(back_populates="complaints")
-    history: list["ComplaintHistory"] = Relationship(back_populates="complaint")
+    user: Optional["User"] = Relationship(back_populates="complaints")
+    department: Optional["Department"] = Relationship(back_populates="complaints")
+    history: List["ComplaintHistory"] = Relationship(back_populates="complaint")
 
 
 class ComplaintHistory(SQLModel, table=True):
@@ -64,5 +66,7 @@ class ComplaintHistory(SQLModel, table=True):
     changed_by: str = Field(foreign_key="users.id", index=True)
     timestamp: datetime = Field(default_factory=utc_now, index=True)
 
-    complaint: Optional[Complaint] = Relationship(back_populates="history")
-    changed_by_user: Optional[User] = Relationship(back_populates="complaint_history_entries")
+    complaint: Optional["Complaint"] = Relationship(back_populates="history")
+    changed_by_user: Optional["User"] = Relationship(
+        back_populates="complaint_history_entries"
+    )
