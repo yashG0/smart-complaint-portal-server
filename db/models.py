@@ -31,7 +31,15 @@ class Department(SQLModel, table=True):
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     name: str = Field(index=True, unique=True)
-    description: str
+    description: str = ""
+    organization_name: str = Field(index=True)
+    organization_code: Optional[str] = Field(default=None, unique=True, index=True)
+    department_code: Optional[str] = Field(default=None, unique=True, index=True)
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    department_user_id: Optional[str] = Field(default=None, foreign_key="users.id", unique=True, index=True)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
     complaints: List["Complaint"] = Relationship(back_populates="department")
 

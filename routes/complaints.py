@@ -34,6 +34,7 @@ def create_complaint_route(
         current_user=current_user,
         title=payload.title,
         description=payload.description,
+        department_id=payload.department_id,
     )
 
 

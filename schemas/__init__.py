@@ -1,4 +1,10 @@
-from schemas.auth import AuthResponse, LoginRequest, RegisterRequest, UserResponse
+from schemas.auth import (
+    AuthResponse,
+    DepartmentRegisterRequest,
+    LoginRequest,
+    RegisterRequest,
+    UserResponse,
+)
 from schemas.complaint import (
     ComplaintAssignRequest,
     ComplaintCreateRequest,
@@ -6,9 +12,11 @@ from schemas.complaint import (
     ComplaintResponse,
     ComplaintStatusUpdateRequest,
 )
+from schemas.department import DepartmentResponse
 
 __all__ = [
     "RegisterRequest",
+    "DepartmentRegisterRequest",
     "LoginRequest",
     "UserResponse",
     "AuthResponse",
@@ -17,4 +25,5 @@ __all__ = [
     "ComplaintStatusUpdateRequest",
     "ComplaintHistoryResponse",
     "ComplaintResponse",
+    "DepartmentResponse",
 ]

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 class ComplaintCreateRequest(BaseModel):
     title: str = Field(min_length=3, max_length=200)
     description: str = Field(min_length=5, max_length=2000)
+    department_id: str | None = None
 
 
 class ComplaintAssignRequest(BaseModel):
@@ -30,6 +31,7 @@ class ComplaintResponse(BaseModel):
     id: str
     user_id: str
     department_id: str | None
+    department_name: str | None = None
     title: str
     description: str
     status: str

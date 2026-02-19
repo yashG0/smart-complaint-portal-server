@@ -6,7 +6,7 @@ from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
 from db.models import Complaint, ComplaintHistory, Department, User
-from schemas.complaint import ComplaintResponse, ComplaintHistoryResponse
+from schemas.complaint import ComplaintHistoryResponse, ComplaintResponse
 
 ALLOWED_STATUS = {
     "pending",
@@ -20,6 +20,12 @@ ALLOWED_STATUS = {
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _get_department_for_user(session: Session, user_id: str) -> Department | None:
+    return session.exec(
+        select(Department).where(Department.department_user_id == user_id)
+    ).first()
 
 
 def _build_history_responses(entries: list[ComplaintHistory]) -> list[ComplaintHistoryResponse]:
@@ -50,10 +56,16 @@ def _build_complaint_response(
         ).all()
         history_entries = _build_history_responses(entries)
 
+    department_name = None
+    if complaint.department_id:
+        department = session.get(Department, complaint.department_id)
+        department_name = department.name if department else None
+
     return ComplaintResponse(
         id=complaint.id,
         user_id=complaint.user_id,
         department_id=complaint.department_id,
+        department_name=department_name,
         title=complaint.title,
         description=complaint.description,
         status=complaint.status,
@@ -87,15 +99,17 @@ def _get_complaint_or_404(session: Session, complaint_id: str) -> Complaint:
     return complaint
 
 
-def _assert_view_access(user: User, complaint: Complaint) -> None:
+def _assert_view_access(session: Session, user: User, complaint: Complaint) -> None:
     if user.role == "admin":
         return
 
     if user.role == "student" and complaint.user_id == user.id:
         return
 
-    if user.role == "department" and complaint.department_id == user.id:
-        return
+    if user.role == "department":
+        department = _get_department_for_user(session, user.id)
+        if department and complaint.department_id == department.id:
+            return
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
@@ -109,6 +123,7 @@ def create_complaint(
     current_user: User,
     title: str,
     description: str,
+    department_id: str | None = None,
 ) -> ComplaintResponse:
     if current_user.role != "student":
         raise HTTPException(
@@ -116,12 +131,22 @@ def create_complaint(
             detail="Only students can create complaints.",
         )
 
+    department = None
+    if department_id:
+        department = session.get(Department, department_id)
+        if not department:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Department not found.",
+            )
+
     now = _now()
     complaint = Complaint(
         user_id=current_user.id,
+        department_id=department.id if department else None,
         title=title.strip(),
         description=description.strip(),
-        status="pending",
+        status="assigned" if department else "pending",
         created_at=now,
         updated_at=now,
     )
@@ -131,7 +156,11 @@ def create_complaint(
 
     history = _create_history_entry(
         complaint_id=complaint.id,
-        action="created",
+        action=(
+            f"created_with_department:{department.id}"
+            if department
+            else "created"
+        ),
         changed_by=current_user.id,
     )
     session.add(history)
@@ -146,7 +175,10 @@ def list_scope_complaints(*, session: Session, current_user: User) -> list[Compl
     if current_user.role == "student":
         statement = statement.where(Complaint.user_id == current_user.id)
     elif current_user.role == "department":
-        statement = statement.where(Complaint.department_id == current_user.id)
+        department = _get_department_for_user(session, current_user.id)
+        if not department:
+            return []
+        statement = statement.where(Complaint.department_id == department.id)
 
     complaints = session.exec(statement).all()
     return [
@@ -157,7 +189,7 @@ def list_scope_complaints(*, session: Session, current_user: User) -> list[Compl
 
 def get_complaint_by_id(*, session: Session, current_user: User, complaint_id: str) -> ComplaintResponse:
     complaint = _get_complaint_or_404(session, complaint_id)
-    _assert_view_access(current_user, complaint)
+    _assert_view_access(session, current_user, complaint)
     return _build_complaint_response(session=session, complaint=complaint)
 
 
@@ -219,8 +251,13 @@ def update_complaint_status(
 
     if current_user.role == "admin":
         pass
-    elif current_user.role == "department" and complaint.department_id == current_user.id:
-        pass
+    elif current_user.role == "department":
+        department = _get_department_for_user(session, current_user.id)
+        if not department or complaint.department_id != department.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to update complaint status.",
+            )
     else:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

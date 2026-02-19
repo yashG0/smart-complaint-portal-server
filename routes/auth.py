@@ -4,7 +4,12 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session
 
 from db.database import get_session
-from schemas.auth import AuthResponse, LoginRequest, RegisterRequest
+from schemas.auth import (
+    AuthResponse,
+    DepartmentRegisterRequest,
+    LoginRequest,
+    RegisterRequest,
+)
 from services.auth_service import login_user, register_user
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
@@ -22,13 +27,22 @@ def register_student(payload: RegisterRequest, session: Session = Depends(get_se
 
 
 @router.post("/department/register", response_model=AuthResponse)
-def register_department(payload: RegisterRequest, session: Session = Depends(get_session)) -> AuthResponse:
+def register_department(
+    payload: DepartmentRegisterRequest,
+    session: Session = Depends(get_session),
+) -> AuthResponse:
     return register_user(
         session=session,
         name=payload.name,
         email=payload.email,
         password=payload.password,
         role="department",
+        organization_name=payload.organization_name,
+        department_description=payload.department_description,
+        organization_code=payload.organization_code,
+        department_code=payload.department_code,
+        contact_email=payload.contact_email,
+        contact_phone=payload.contact_phone,
     )
 
 
