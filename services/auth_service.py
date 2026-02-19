@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 
 from core.config import ACCESS_TOKEN_EXPIRE_DELTA
 from core.security import create_access_token, hash_password, verify_password
-from db.models import User
+from db.models import Department, User
 from schemas.auth import AuthResponse, UserResponse
 
 ROLE_ALIASES = {
@@ -63,6 +63,24 @@ def register_user(*, session: Session, name: str, email: str, password: str, rol
         updated_at=now,
     )
     session.add(user)
+
+    if normalized_role == "department":
+        existing_department = session.exec(
+            select(Department).where(Department.name == user.name)
+        ).first()
+        if existing_department:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Department name is already registered.",
+            )
+
+        department = Department(
+            id=user.id,
+            name=user.name,
+            description=f"Department account for {user.name}",
+        )
+        session.add(department)
+
     session.commit()
     session.refresh(user)
 
