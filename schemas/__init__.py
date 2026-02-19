@@ -13,6 +13,7 @@ from schemas.complaint import (
     ComplaintStatusUpdateRequest,
 )
 from schemas.department import DepartmentResponse
+from schemas.user import UpdateUserProfileRequest, UserMeResponse
 
 __all__ = [
     "RegisterRequest",
@@ -26,4 +27,6 @@ __all__ = [
     "ComplaintHistoryResponse",
     "ComplaintResponse",
     "DepartmentResponse",
+    "UserMeResponse",
+    "UpdateUserProfileRequest",
 ]

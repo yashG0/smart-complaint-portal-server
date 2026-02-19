@@ -6,6 +6,7 @@ from services.complaint_service import (
     list_scope_complaints,
     update_complaint_status,
 )
+from services.user_service import get_user_profile, update_user_profile
 
 __all__ = [
     "register_user",
@@ -15,4 +16,6 @@ __all__ = [
     "get_complaint_by_id",
     "assign_department",
     "update_complaint_status",
+    "get_user_profile",
+    "update_user_profile",
 ]
