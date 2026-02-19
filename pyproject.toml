@@ -10,6 +10,6 @@ dependencies = [
     "pymysql>=1.1.2",
     "python-dotenv>=1.2.1",
     "python-jose>=3.5.0",
-    "sqlalchemy>=2.0.46",
+    "sqlmodel>=0.0.34",
     "uvicorn[standard]>=0.41.0",
 ]
