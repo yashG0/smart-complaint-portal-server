@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends
 from sqlmodel import Session, select
 
-from core.dependencies import get_current_user
+from core.dependencies import require_roles
 from db.database import get_session
 from db.models import Department, User
 from schemas.department import DepartmentResponse
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/departments", tags=["Departments"])
 
 @router.get("", response_model=list[DepartmentResponse])
 def list_departments_route(
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_roles("student", "department", "admin")),
     session: Session = Depends(get_session),
 ) -> list[DepartmentResponse]:
     # Backfill for older DB records where department users existed

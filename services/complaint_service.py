@@ -17,6 +17,21 @@ ALLOWED_STATUS = {
     "escalated",
 }
 
+STATUS_ALIASES = {
+    "in progress": "in_progress",
+}
+
+VALID_TRANSITIONS: dict[str, set[str]] = {
+    "pending": {"assigned", "rejected"},
+    "assigned": {"in_progress", "resolved", "escalated"},
+    "in_progress": {"resolved", "escalated"},
+    "escalated": {"in_progress", "resolved", "rejected"},
+    "resolved": set(),
+    "rejected": set(),
+}
+
+DEPARTMENT_ALLOWED_TARGETS = {"in_progress", "resolved", "escalated"}
+
 
 def _now() -> datetime:
     return datetime.now(UTC)
@@ -26,6 +41,25 @@ def _get_department_for_user(session: Session, user_id: str) -> Department | Non
     return session.exec(
         select(Department).where(Department.department_user_id == user_id)
     ).first()
+
+
+def _normalize_status(status_value: str) -> str:
+    normalized = status_value.strip().lower()
+    return STATUS_ALIASES.get(normalized, normalized)
+
+
+def _assert_valid_transition(*, current_status: str, next_status: str) -> None:
+    if current_status == next_status:
+        return
+
+    allowed_next = VALID_TRANSITIONS.get(current_status, set())
+    if next_status not in allowed_next:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Invalid status transition from '{current_status}' to '{next_status}'."
+            ),
+        )
 
 
 def _build_history_responses(entries: list[ComplaintHistory]) -> list[ComplaintHistoryResponse]:
@@ -193,6 +227,20 @@ def get_complaint_by_id(*, session: Session, current_user: User, complaint_id: s
     return _build_complaint_response(session=session, complaint=complaint)
 
 
+def get_complaint_history(
+    *, session: Session, current_user: User, complaint_id: str
+) -> list[ComplaintHistoryResponse]:
+    complaint = _get_complaint_or_404(session, complaint_id)
+    _assert_view_access(session, current_user, complaint)
+
+    entries = session.exec(
+        select(ComplaintHistory)
+        .where(ComplaintHistory.complaint_id == complaint.id)
+        .order_by(ComplaintHistory.timestamp.asc())
+    ).all()
+    return _build_history_responses(entries)
+
+
 def assign_department(
     *,
     session: Session,
@@ -207,6 +255,11 @@ def assign_department(
         )
 
     complaint = _get_complaint_or_404(session, complaint_id)
+    if complaint.status in {"resolved", "rejected"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot assign a closed complaint.",
+        )
 
     department = session.get(Department, department_id)
     if not department:
@@ -240,7 +293,7 @@ def update_complaint_status(
     complaint_id: str,
     status_value: str,
 ) -> ComplaintResponse:
-    normalized_status = status_value.strip().lower()
+    normalized_status = _normalize_status(status_value)
     if normalized_status not in ALLOWED_STATUS:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -249,8 +302,10 @@ def update_complaint_status(
 
     complaint = _get_complaint_or_404(session, complaint_id)
 
+    current_status = _normalize_status(complaint.status)
+
     if current_user.role == "admin":
-        pass
+        _assert_valid_transition(current_status=current_status, next_status=normalized_status)
     elif current_user.role == "department":
         department = _get_department_for_user(session, current_user.id)
         if not department or complaint.department_id != department.id:
@@ -258,6 +313,12 @@ def update_complaint_status(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to update complaint status.",
             )
+        if normalized_status not in DEPARTMENT_ALLOWED_TARGETS:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Department can only set status to in_progress, resolved, or escalated.",
+            )
+        _assert_valid_transition(current_status=current_status, next_status=normalized_status)
     else:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

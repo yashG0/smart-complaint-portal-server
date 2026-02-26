@@ -44,3 +44,17 @@ def get_current_user(
         )
 
     return user
+
+
+def require_roles(*allowed_roles: str):
+    allowed = {role.strip().lower() for role in allowed_roles if role.strip()}
+
+    def _dependency(current_user: User = Depends(get_current_user)) -> User:
+        if allowed and current_user.role not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized for this resource.",
+            )
+        return current_user
+
+    return _dependency

@@ -3,18 +3,20 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlmodel import Session
 
-from core.dependencies import get_current_user
+from core.dependencies import require_roles
 from db.database import get_session
 from db.models import User
 from schemas.complaint import (
     ComplaintAssignRequest,
     ComplaintCreateRequest,
+    ComplaintHistoryResponse,
     ComplaintResponse,
     ComplaintStatusUpdateRequest,
 )
 from services.complaint_service import (
     assign_department,
     create_complaint,
+    get_complaint_history,
     get_complaint_by_id,
     list_scope_complaints,
     update_complaint_status,
@@ -27,7 +29,7 @@ router = APIRouter(prefix="/api/complaints", tags=["Complaints"])
 def create_complaint_route(
     payload: ComplaintCreateRequest,
     session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_roles("student")),
 ) -> ComplaintResponse:
     return create_complaint(
         session=session,
@@ -41,7 +43,7 @@ def create_complaint_route(
 @router.get("/my", response_model=list[ComplaintResponse])
 def list_my_complaints_route(
     session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_roles("student", "department", "admin")),
 ) -> list[ComplaintResponse]:
     return list_scope_complaints(session=session, current_user=current_user)
 
@@ -49,7 +51,7 @@ def list_my_complaints_route(
 @router.get("", response_model=list[ComplaintResponse])
 def list_complaints_route(
     session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_roles("student", "department", "admin")),
 ) -> list[ComplaintResponse]:
     return list_scope_complaints(session=session, current_user=current_user)
 
@@ -58,9 +60,22 @@ def list_complaints_route(
 def get_complaint_by_id_route(
     complaint_id: str,
     session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_roles("student", "department", "admin")),
 ) -> ComplaintResponse:
     return get_complaint_by_id(
+        session=session,
+        current_user=current_user,
+        complaint_id=complaint_id,
+    )
+
+
+@router.get("/{complaint_id}/history", response_model=list[ComplaintHistoryResponse])
+def get_complaint_history_route(
+    complaint_id: str,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(require_roles("student", "department", "admin")),
+) -> list[ComplaintHistoryResponse]:
+    return get_complaint_history(
         session=session,
         current_user=current_user,
         complaint_id=complaint_id,
@@ -72,7 +87,7 @@ def assign_department_route(
     complaint_id: str,
     payload: ComplaintAssignRequest,
     session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_roles("admin")),
 ) -> ComplaintResponse:
     return assign_department(
         session=session,
@@ -87,7 +102,7 @@ def update_status_route(
     complaint_id: str,
     payload: ComplaintStatusUpdateRequest,
     session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_roles("department", "admin")),
 ) -> ComplaintResponse:
     return update_complaint_status(
         session=session,
