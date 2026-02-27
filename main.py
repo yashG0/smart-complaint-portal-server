@@ -22,6 +22,7 @@ app.add_middleware(
         "http://localhost:5500",
         "http://127.0.0.1:3000",
         "http://localhost:3000",
+        "https://yashg0.github.io",
     ],
     allow_credentials=True,
     allow_methods=["*"],
