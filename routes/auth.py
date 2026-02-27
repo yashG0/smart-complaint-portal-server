@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session
 
 from db.database import get_session
@@ -48,12 +48,9 @@ def register_department(
 
 @router.post("/admin/register", response_model=AuthResponse)
 def register_admin(payload: RegisterRequest, session: Session = Depends(get_session)) -> AuthResponse:
-    return register_user(
-        session=session,
-        name=payload.name,
-        email=payload.email,
-        password=payload.password,
-        role="admin",
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Admin self-registration is disabled.",
     )
 
 
