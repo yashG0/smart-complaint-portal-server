@@ -1,14 +1,20 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import secrets
+from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
-from core.config import ACCESS_TOKEN_EXPIRE_DELTA
+from core.config import (
+    ACCESS_TOKEN_EXPIRE_DELTA,
+    PASSWORD_RESET_CODE_EXPIRE_MINUTES,
+    PASSWORD_RESET_RESEND_SECONDS,
+)
 from core.security import create_access_token, hash_password, verify_password
-from db.models import Department, User
+from db.models import Department, PasswordResetCode, User
 from schemas.auth import AuthResponse, UserResponse
+from services.email_service import send_password_reset_code
 
 ROLE_ALIASES = {
     "user": "student",
@@ -16,6 +22,12 @@ ROLE_ALIASES = {
     "department": "department",
     "admin": "admin",
 }
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def normalize_role(role: str) -> str:
@@ -149,3 +161,94 @@ def login_user(*, session: Session, email: str, password: str, role: str | None 
         )
 
     return _build_auth_response(user)
+
+
+def request_password_reset_code(*, session: Session, email: str, role: str) -> None:
+    normalized_role = normalize_role(role)
+    user = session.exec(select(User).where(User.email == email.lower())).first()
+    if not user or user.role != normalized_role:
+        # Do not reveal whether email exists.
+        return
+
+    now = datetime.now(UTC)
+    recent_code = session.exec(
+        select(PasswordResetCode)
+        .where(PasswordResetCode.user_id == user.id)
+        .where(PasswordResetCode.role == normalized_role)
+        .order_by(PasswordResetCode.created_at.desc())
+    ).first()
+    if recent_code and (
+        now - _as_utc(recent_code.created_at)
+    ).total_seconds() < PASSWORD_RESET_RESEND_SECONDS:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Please wait before requesting another reset code.",
+        )
+
+    code = f"{secrets.randbelow(10**6):06d}"
+    reset_entry = PasswordResetCode(
+        user_id=user.id,
+        role=normalized_role,
+        code_hash=hash_password(code),
+        expires_at=now + timedelta(minutes=PASSWORD_RESET_CODE_EXPIRE_MINUTES),
+        used=False,
+        created_at=now,
+    )
+    session.add(reset_entry)
+    session.commit()
+
+    send_password_reset_code(to_email=user.email, code=code)
+
+
+def reset_password_with_code(
+    *,
+    session: Session,
+    email: str,
+    role: str,
+    code: str,
+    new_password: str,
+) -> None:
+    normalized_role = normalize_role(role)
+    user = session.exec(select(User).where(User.email == email.lower())).first()
+    if not user or user.role != normalized_role:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid reset request.",
+        )
+
+    now = datetime.now(UTC)
+    codes = session.exec(
+        select(PasswordResetCode)
+        .where(PasswordResetCode.user_id == user.id)
+        .where(PasswordResetCode.role == normalized_role)
+        .where(PasswordResetCode.used == False)  # noqa: E712
+        .order_by(PasswordResetCode.created_at.desc())
+    ).all()
+
+    if not codes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No active reset code found. Request a new code.",
+        )
+
+    matched_code = None
+    for entry in codes:
+        if _as_utc(entry.expires_at) < now:
+            continue
+        if verify_password(code, entry.code_hash):
+            matched_code = entry
+            break
+
+    if not matched_code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset code.",
+        )
+
+    matched_code.used = True
+    user.password_hash = hash_password(new_password)
+    user.updated_at = now
+
+    session.add(matched_code)
+    session.add(user)
+    session.commit()

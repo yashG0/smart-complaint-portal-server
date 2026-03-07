@@ -7,10 +7,17 @@ from db.database import get_session
 from schemas.auth import (
     AuthResponse,
     DepartmentRegisterRequest,
+    ForgotPasswordRequest,
     LoginRequest,
+    ResetPasswordWithCodeRequest,
     RegisterRequest,
 )
-from services.auth_service import login_user, register_user
+from services.auth_service import (
+    login_user,
+    register_user,
+    request_password_reset_code,
+    reset_password_with_code,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
 
@@ -123,3 +130,87 @@ def login_generic(payload: LoginRequest, session: Session = Depends(get_session)
         email=payload.email,
         password=payload.password,
     )
+
+
+@router.post("/student/forgot-password")
+def student_forgot_password(
+    payload: ForgotPasswordRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, str]:
+    request_password_reset_code(
+        session=session,
+        email=payload.email,
+        role="student",
+    )
+    return {"message": "If account exists, reset code has been sent to email."}
+
+
+@router.post("/department/forgot-password")
+def department_forgot_password(
+    payload: ForgotPasswordRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, str]:
+    request_password_reset_code(
+        session=session,
+        email=payload.email,
+        role="department",
+    )
+    return {"message": "If account exists, reset code has been sent to email."}
+
+
+@router.post("/admin/forgot-password")
+def admin_forgot_password(
+    payload: ForgotPasswordRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, str]:
+    request_password_reset_code(
+        session=session,
+        email=payload.email,
+        role="admin",
+    )
+    return {"message": "If account exists, reset code has been sent to email."}
+
+
+@router.post("/student/reset-password")
+def student_reset_password(
+    payload: ResetPasswordWithCodeRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, str]:
+    reset_password_with_code(
+        session=session,
+        email=payload.email,
+        role="student",
+        code=payload.code,
+        new_password=payload.new_password,
+    )
+    return {"message": "Password reset successful."}
+
+
+@router.post("/department/reset-password")
+def department_reset_password(
+    payload: ResetPasswordWithCodeRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, str]:
+    reset_password_with_code(
+        session=session,
+        email=payload.email,
+        role="department",
+        code=payload.code,
+        new_password=payload.new_password,
+    )
+    return {"message": "Password reset successful."}
+
+
+@router.post("/admin/reset-password")
+def admin_reset_password(
+    payload: ResetPasswordWithCodeRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, str]:
+    reset_password_with_code(
+        session=session,
+        email=payload.email,
+        role="admin",
+        code=payload.code,
+        new_password=payload.new_password,
+    )
+    return {"message": "Password reset successful."}

@@ -25,6 +25,16 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=6, max_length=128)
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordWithCodeRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=4, max_length=10)
+    new_password: str = Field(min_length=6, max_length=128)
+
+
 class UserResponse(BaseModel):
     id: str
     name: str

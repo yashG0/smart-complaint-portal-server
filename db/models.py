@@ -24,6 +24,9 @@ class User(SQLModel, table=True):
     complaint_history_entries: List["ComplaintHistory"] = Relationship(
         back_populates="changed_by_user"
     )
+    password_reset_codes: List["PasswordResetCode"] = Relationship(
+        back_populates="user"
+    )
 
 
 class Department(SQLModel, table=True):
@@ -78,3 +81,17 @@ class ComplaintHistory(SQLModel, table=True):
     changed_by_user: Optional["User"] = Relationship(
         back_populates="complaint_history_entries"
     )
+
+
+class PasswordResetCode(SQLModel, table=True):
+    __tablename__ = "password_reset_codes"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    user_id: str = Field(foreign_key="users.id", index=True)
+    role: str = Field(index=True)
+    code_hash: str
+    expires_at: datetime = Field(index=True)
+    used: bool = Field(default=False, index=True)
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+
+    user: Optional["User"] = Relationship(back_populates="password_reset_codes")

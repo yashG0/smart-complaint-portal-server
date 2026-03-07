@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import create_engine
+from sqlmodel import Session, create_engine, select
 
+from core.security import hash_password
 import db.database as database_module
+import services.auth_service as auth_service
+from db.models import User
 from main import app
 
 
@@ -46,11 +50,26 @@ def _register_student(client: TestClient, email: str = "student@test.com") -> di
     return response.json()
 
 
-def _register_admin(client: TestClient, email: str = "admin@test.com") -> dict:
+def _bootstrap_admin(client: TestClient, email: str = "admin@test.com") -> dict:
+    now = datetime.now(UTC)
+    with Session(database_module.engine) as session:
+        existing = session.exec(select(User).where(User.email == email.lower())).first()
+        if not existing:
+            session.add(
+                User(
+                    name="Admin One",
+                    email=email.lower(),
+                    password_hash=hash_password("strongpass123"),
+                    role="admin",
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            session.commit()
+
     response = client.post(
-        "/api/auth/admin/register",
+        "/api/auth/admin/login",
         json={
-            "name": "Admin One",
             "email": email,
             "password": "strongpass123",
         },
@@ -102,7 +121,7 @@ def test_student_auth_and_create_complaint(client: TestClient) -> None:
 
 def test_role_guard_blocks_student_from_admin_actions(client: TestClient) -> None:
     student = _register_student(client)
-    _register_admin(client)
+    _bootstrap_admin(client)
     _register_department(client)
 
     student_token = student["access_token"]
@@ -134,7 +153,7 @@ def test_role_guard_blocks_student_from_admin_actions(client: TestClient) -> Non
 
 def test_complaint_assignment_transitions_and_history(client: TestClient) -> None:
     student = _register_student(client)
-    admin = _register_admin(client)
+    admin = _bootstrap_admin(client)
     department = _register_department(client)
 
     student_token = student["access_token"]
@@ -207,7 +226,7 @@ def test_complaint_assignment_transitions_and_history(client: TestClient) -> Non
 
 def test_admin_invalid_transition_pending_to_resolved_fails(client: TestClient) -> None:
     student = _register_student(client)
-    admin = _register_admin(client)
+    admin = _bootstrap_admin(client)
 
     student_token = student["access_token"]
     admin_token = admin["access_token"]
@@ -228,3 +247,41 @@ def test_admin_invalid_transition_pending_to_resolved_fails(client: TestClient) 
         headers=_auth_headers(admin_token),
     )
     assert transition_response.status_code == 409
+
+
+def test_forgot_password_with_code_flow(client: TestClient, monkeypatch) -> None:
+    _register_student(client, email="resetstudent@test.com")
+    sent_codes: list[str] = []
+
+    monkeypatch.setattr(auth_service.secrets, "randbelow", lambda _: 123456)
+    monkeypatch.setattr(
+        auth_service,
+        "send_password_reset_code",
+        lambda *, to_email, code: sent_codes.append(code),
+    )
+
+    forgot_response = client.post(
+        "/api/auth/student/forgot-password",
+        json={"email": "resetstudent@test.com"},
+    )
+    assert forgot_response.status_code == 200, forgot_response.text
+    assert sent_codes == ["123456"]
+
+    reset_response = client.post(
+        "/api/auth/student/reset-password",
+        json={
+            "email": "resetstudent@test.com",
+            "code": "123456",
+            "new_password": "newpass123",
+        },
+    )
+    assert reset_response.status_code == 200, reset_response.text
+
+    login_response = client.post(
+        "/api/auth/student/login",
+        json={
+            "email": "resetstudent@test.com",
+            "password": "newpass123",
+        },
+    )
+    assert login_response.status_code == 200, login_response.text
