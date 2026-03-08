@@ -70,7 +70,7 @@ def _dispatch_notification(
             event_name=event_name,
             send_fn=send_fn,
             kwargs=kwargs,
-        )
+        ) # type: ignore
         return
 
     _run_notification_safely(
@@ -129,9 +129,9 @@ def _build_complaint_response(
         entries = session.exec(
             select(ComplaintHistory)
             .where(ComplaintHistory.complaint_id == complaint.id)
-            .order_by(ComplaintHistory.timestamp.asc())
+            .order_by(ComplaintHistory.timestamp.asc()) # type: ignore
         ).all()
-        history_entries = _build_history_responses(entries)
+        history_entries = _build_history_responses(entries) # type: ignore
 
     department_name = None
     if complaint.department_id:
@@ -247,7 +247,7 @@ def create_complaint(
 
 
 def list_scope_complaints(*, session: Session, current_user: User) -> list[ComplaintResponse]:
-    statement = select(Complaint).order_by(Complaint.created_at.desc())
+    statement = select(Complaint).order_by(Complaint.created_at.desc()) # type: ignore
 
     if current_user.role == "student":
         statement = statement.where(Complaint.user_id == current_user.id)
@@ -279,9 +279,9 @@ def get_complaint_history(
     entries = session.exec(
         select(ComplaintHistory)
         .where(ComplaintHistory.complaint_id == complaint.id)
-        .order_by(ComplaintHistory.timestamp.asc())
+        .order_by(ComplaintHistory.timestamp.asc()) # type: ignore
     ).all()
-    return _build_history_responses(entries)
+    return _build_history_responses(entries) # type: ignore
 
 
 def assign_department(
