@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlmodel import Session
 
 from core.dependencies import require_roles
@@ -86,6 +86,7 @@ def get_complaint_history_route(
 def assign_department_route(
     complaint_id: str,
     payload: ComplaintAssignRequest,
+    background_tasks: BackgroundTasks,
     session: Session = Depends(get_session),
     current_user: User = Depends(require_roles("admin")),
 ) -> ComplaintResponse:
@@ -94,6 +95,7 @@ def assign_department_route(
         current_user=current_user,
         complaint_id=complaint_id,
         department_id=payload.department_id,
+        background_tasks=background_tasks,
     )
 
 
@@ -101,6 +103,7 @@ def assign_department_route(
 def update_status_route(
     complaint_id: str,
     payload: ComplaintStatusUpdateRequest,
+    background_tasks: BackgroundTasks,
     session: Session = Depends(get_session),
     current_user: User = Depends(require_roles("department", "admin")),
 ) -> ComplaintResponse:
@@ -109,4 +112,5 @@ def update_status_route(
         current_user=current_user,
         complaint_id=complaint_id,
         status_value=payload.status,
+        background_tasks=background_tasks,
     )

@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import logging
+from typing import Any, Callable
 
-from fastapi import HTTPException, status
+from fastapi import BackgroundTasks, HTTPException, status
 from sqlmodel import Session, select
 
 from db.models import Complaint, ComplaintHistory, Department, User
 from schemas.complaint import ComplaintHistoryResponse, ComplaintResponse
+from services.email_service import (
+    send_complaint_assigned_email,
+    send_complaint_status_updated_email,
+)
+
+logger = logging.getLogger(__name__)
 
 ALLOWED_STATUS = {
     "pending",
@@ -35,6 +43,41 @@ DEPARTMENT_ALLOWED_TARGETS = {"in_progress", "resolved", "escalated"}
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _run_notification_safely(
+    *,
+    event_name: str,
+    send_fn: Callable[..., None],
+    kwargs: dict[str, Any],
+) -> None:
+    try:
+        send_fn(**kwargs)
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to send complaint %s email", event_name)
+
+
+def _dispatch_notification(
+    *,
+    background_tasks: BackgroundTasks | None,
+    event_name: str,
+    send_fn: Callable[..., None],
+    kwargs: dict[str, Any],
+) -> None:
+    if background_tasks:
+        background_tasks.add_task(
+            _run_notification_safely,
+            event_name=event_name,
+            send_fn=send_fn,
+            kwargs=kwargs,
+        )
+        return
+
+    _run_notification_safely(
+        event_name=event_name,
+        send_fn=send_fn,
+        kwargs=kwargs,
+    )
 
 
 def _get_department_for_user(session: Session, user_id: str) -> Department | None:
@@ -247,6 +290,7 @@ def assign_department(
     current_user: User,
     complaint_id: str,
     department_id: str,
+    background_tasks: BackgroundTasks | None = None,
 ) -> ComplaintResponse:
     if current_user.role != "admin":
         raise HTTPException(
@@ -283,6 +327,21 @@ def assign_department(
     session.commit()
     session.refresh(complaint)
 
+    student = session.get(User, complaint.user_id)
+    if student:
+        _dispatch_notification(
+            background_tasks=background_tasks,
+            event_name="assignment",
+            send_fn=send_complaint_assigned_email,
+            kwargs={
+                "to_email": student.email,
+                "student_name": student.name,
+                "complaint_id": complaint.id,
+                "complaint_title": complaint.title,
+                "department_name": department.name,
+            },
+        )
+
     return _build_complaint_response(session=session, complaint=complaint)
 
 
@@ -292,6 +351,7 @@ def update_complaint_status(
     current_user: User,
     complaint_id: str,
     status_value: str,
+    background_tasks: BackgroundTasks | None = None,
 ) -> ComplaintResponse:
     normalized_status = _normalize_status(status_value)
     if normalized_status not in ALLOWED_STATUS:
@@ -325,6 +385,13 @@ def update_complaint_status(
             detail="Not authorized to update complaint status.",
         )
 
+    if normalized_status == "assigned" and not complaint.department_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot set status to assigned without selecting a department.",
+        )
+
+    previous_status = current_status
     complaint.status = normalized_status
     complaint.updated_at = _now()
     session.add(complaint)
@@ -338,5 +405,21 @@ def update_complaint_status(
 
     session.commit()
     session.refresh(complaint)
+
+    student = session.get(User, complaint.user_id)
+    if student:
+        _dispatch_notification(
+            background_tasks=background_tasks,
+            event_name="status_update",
+            send_fn=send_complaint_status_updated_email,
+            kwargs={
+                "to_email": student.email,
+                "student_name": student.name,
+                "complaint_id": complaint.id,
+                "complaint_title": complaint.title,
+                "previous_status": previous_status,
+                "current_status": normalized_status,
+            },
+        )
 
     return _build_complaint_response(session=session, complaint=complaint)
